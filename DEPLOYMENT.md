@@ -1,6 +1,6 @@
 # Deploying BiteBox to AWS
 
-This covers both repos: the API (this repo) and the web app (`bitebox-web`). Region: **Mumbai (ap-south-1)**, closest to Indian customers.
+This covers all three repos: the API (this repo), the web app (`bitebox-web`) and the Android/iOS apps (`bitebox-mobile`). Region: **Mumbai (ap-south-1)**, closest to Indian customers.
 
 Prices are approximate on-demand list prices checked in November 2026. Some are US East rates; Mumbai is usually equal or a little higher. Always confirm in the [AWS Pricing Calculator](https://calculator.aws/) before you commit.
 
@@ -189,3 +189,26 @@ The web workflow builds with `VITE_API_URL` and uploads to S3. Hashed assets are
 | Hot reads | The restaurant list and menus are cached in Valkey and cleared on every edit. |
 | Zero-downtime releases | Rolling deploys, readiness checks, a 30s drain, and graceful shutdown hooks. |
 | Next steps at real scale | RDS read replica for reports, Multi-AZ, a custom VPC with private subnets, AWS WAF in front of the ALB and CloudFront, and infrastructure as code (Terraform or AWS CDK) instead of console clicks. |
+
+---
+
+## Mobile apps (Android and iOS)
+
+The apps don't run on AWS. They're built by **EAS Build** (Expo's cloud build service) and distributed through the stores, and they talk to the same API as the website.
+
+| Item | Cost | Notes |
+|---|---|---|
+| Apple Developer Program | $99/year | Needed for TestFlight and the App Store |
+| Google Play Console | $25 one-time | Needed for Google Play |
+| EAS Build / Submit | free tier available | Limited free builds per month; paid plans for more and faster builds |
+| Expo Push Service | free | Delivers via FCM (free) and APNs (free) |
+| Firebase project (FCM) | free | Only used to obtain push credentials for Android |
+
+**Checklist for the first release:**
+1. The API is on **HTTPS** (`https://api.yourdomain.com`). Phones refuse plain `http://` in release builds.
+2. In `bitebox-mobile/eas.json`, set `EXPO_PUBLIC_API_URL` for the `preview` and `production` profiles.
+3. Push credentials: APNs key (EAS creates it during the first iOS build) and the FCM v1 service account key (upload with `eas credentials`). Optionally set `EXPO_ACCESS_TOKEN` on the API (in SSM, added to the task definition's `secrets`).
+4. Stripe: the mobile apps use the same Stripe account and webhook as the website. Nothing extra on the server.
+5. Build and submit: `eas build --profile production --platform all`, then `eas submit` for each platform.
+
+Full steps are in the `bitebox-mobile` README.

@@ -2,7 +2,7 @@
 
 Backend for **BiteBox**, a food ordering and delivery platform. Customers browse restaurants, build a cart, pay online and track their order live. Restaurants manage menus, work through incoming orders on a live board and see their sales. Admins oversee the whole platform.
 
-The front end is in the companion repo [bitebox-web](https://github.com/rkparupudi/bitebox-web).
+**One API, three clients:** the website ([bitebox-web](https://github.com/rkparupudi/bitebox-web)) and the Android and iOS apps ([bitebox-mobile](https://github.com/rkparupudi/bitebox-mobile)) all use the same endpoints, accounts, orders and live updates.
 
 ![CI](https://github.com/rkparupudi/bitebox-api/actions/workflows/ci.yml/badge.svg)
 
@@ -14,9 +14,10 @@ The front end is in the companion repo [bitebox-web](https://github.com/rkparupu
 | **Cache and messaging** | Redis / Valkey: caching, carts, rate limits, distributed locks, Socket.IO pub/sub |
 | **Payments** | Stripe PaymentIntents and signed webhooks, plus a local simulator |
 | **Real time** | Socket.IO (WebSocket) with the Redis adapter |
+| **Push notifications** | Expo Push Service → FCM (Android) and APNs (iOS) |
 | **Auth** | JWT bearer tokens, bcrypt password hashing, role-based access |
 | **Docs** | Swagger / OpenAPI at `/docs` |
-| **Tests** | Jest and Supertest: 42 tests against real PostgreSQL and Redis |
+| **Tests** | Jest and Supertest: 46 tests against real PostgreSQL and Redis |
 | **Delivery** | Docker, GitHub Actions, AWS (ECS Fargate, RDS, ElastiCache). See [DEPLOYMENT.md](DEPLOYMENT.md) |
 
 ---
@@ -33,6 +34,7 @@ The front end is in the companion repo [bitebox-web](https://github.com/rkparupu
 8. [Order lifecycle](#order-lifecycle)
 9. [Payments](#payments)
 10. [Real-time updates](#real-time-updates)
+    - [Push notifications (mobile)](#push-notifications-mobile)
 11. [API reference](#api-reference)
 12. [Errors](#errors)
 13. [Security](#security)
@@ -52,13 +54,13 @@ The front end is in the companion repo [bitebox-web](https://github.com/rkparupu
 - A cart that holds one restaurant's items, with a "start a new cart?" prompt when switching.
 - Checkout with delivery address and notes; prices always come from the database.
 - Pay by card through Stripe (or the local simulator).
-- Live order tracking over WebSocket; order history.
+- Live order tracking over WebSocket; push notifications on Android and iOS; order history.
 - Cancel until the restaurant accepts; paid orders are refunded automatically.
 
 **Restaurant owners**
 - Create restaurants; open and close them for orders.
 - Menu management: add, re-price, mark unavailable, delete.
-- Live order board: new paid orders arrive instantly.
+- Live order board: new paid orders arrive instantly, plus a push notification on their phone.
 - Move orders through the workflow (accept → preparing → ready → out for delivery → delivered) or reject them, with an automatic refund.
 - 30-day sales report: revenue, order count and daily breakdown.
 
@@ -79,7 +81,7 @@ The front end is in the companion repo [bitebox-web](https://github.com/rkparupu
 flowchart LR
     subgraph Clients
         W[Web app<br/>React]
-        M[Mobile app<br/>future]
+        M[Android + iOS apps<br/>React Native]
     end
     S[Stripe]
 
@@ -93,6 +95,7 @@ flowchart LR
         RT[Realtime<br/>Socket.IO gateway]
         AD[Admin]
         JOB[Expiry job<br/>Redis lock]
+        NO
     end
 
     PG[(PostgreSQL<br/>source of truth)]
@@ -100,7 +103,10 @@ flowchart LR
 
     W -- REST + JWT --> G
     W -- WebSocket /orders --> RT
-    M -.-> G
+    M -- REST + JWT --> G
+    M -- WebSocket /orders --> RT
+    NO[Notifications] -- Expo Push → FCM / APNs --> M
+    OR -- order.status_changed event --> NO
     G --> AU & RE & CA & OR & AD
     OR --> PA
     PA -- create PaymentIntent / refund --> S
@@ -176,9 +182,10 @@ npm run start:dev               # restarts on file changes
 - Swagger UI: http://localhost:3000/docs
 - Health: http://localhost:3000/health/ready
 
-### 5. Run the web app
+### 5. Run the web app and the mobile app
 
-In the `bitebox-web` folder, run `npm install` and then `npm run dev`. Open http://localhost:5173 and use the one-click demo logins.
+- **Web:** in the `bitebox-web` folder, run `npm install` and then `npm run dev`. Open http://localhost:5173 and use the one-click demo logins.
+- **Phone:** see the `bitebox-mobile` README. The app finds this API on your Wi-Fi automatically (port 3000).
 
 ### Try it without the UI
 
@@ -230,6 +237,8 @@ All settings come from environment variables. Locally they're read from `.env`. 
 | `CORS_ORIGINS` | in production | all | Comma-separated browser origins allowed to call the API |
 | `DATABASE_SSL_CA` | | — | Path to a CA bundle; enables verified TLS to the database (RDS) |
 | `DATABASE_SSL` | | — | `true` enables TLS with the system CA store |
+| `EXPO_ACCESS_TOKEN` | recommended in production | — | Expo access token, if "enhanced push security" is on in your Expo account |
+| `EXPO_PUSH_URL` | | Expo's endpoint | Override for testing |
 
 > Money is always an **integer in the currency's smallest unit** (paise, cents). `32000` means ₹320.00. Floats are never used for money.
 
@@ -281,6 +290,7 @@ src/
 ├── payments/payments.module.ts # Payment entity, webhook idempotency table,
 │                               #   Stripe gateway, fake gateway
 ├── realtime/orders.gateway.ts  # Socket.IO namespace /orders, rooms, push events
+├── notifications/notifications.module.ts  # device registration, push via Expo (FCM/APNs)
 ├── admin/admin.module.ts       # admin-only endpoints
 └── database/
     ├── data-source.ts          # TypeORM options (+ CLI data source, TLS)
@@ -311,6 +321,7 @@ erDiagram
     orders ||--|{ order_items : contains
     orders ||--o{ order_status_events : "history"
     orders ||--o| payments : "paid by"
+    users ||--o{ devices : "phones"
     menu_items |o--o{ order_items : "snapshot of"
 
     users {
@@ -374,6 +385,12 @@ erDiagram
         int amountMinor
         enum status "requires_payment | succeeded | failed | canceled | refunded"
         string refundId
+    }
+    devices {
+        uuid id PK
+        uuid userId FK
+        string token UK "Expo push token"
+        string platform "ios | android"
     }
     processed_webhook_events {
         string eventId PK "Stripe event id: idempotency"
@@ -512,6 +529,23 @@ socket.on('order.updated', (e) => console.log(e));
 - An invalid or missing token gets an `error` event and is disconnected.
 - A restaurant created while the owner is connected is joined live; no reconnect needed.
 - With several API instances, the **Redis adapter** relays events between them, so a status change handled on instance A reaches a client connected to instance B.
+
+### Push notifications (mobile)
+
+WebSockets only work while an app is open. Phones also get **push notifications**:
+
+1. After sign-in, the mobile app gets an Expo push token and calls `POST /devices`.
+2. On every order status change, `OrderNotifier` (listening to the same `order.status_changed` event) looks up the right users' devices.
+3. It sends through the **Expo Push Service**, which delivers via **FCM** on Android and **APNs** on iOS. One integration covers both platforms.
+
+| Event | Customer | Restaurant owner |
+|---|---|---|
+| Payment received (`placed`) | "Order placed · #A1B2C3" | "New order #A1B2C3 · 2 items for …" |
+| `confirmed` → `delivered` | one message per step | — |
+| Cancelled after payment | "Order cancelled… refunded" | "Order #A1B2C3 cancelled" |
+| Unpaid order cancelled | silent | silent |
+
+Each message carries `{ orderId, restaurantId, status }`, so tapping it opens the right screen. Sending is **best-effort**: a failure is logged and never affects the order. Tokens Expo reports as `DeviceNotRegistered` (app uninstalled) are deleted automatically. Up to 100 messages go per request.
 
 ---
 
@@ -678,6 +712,13 @@ Revenue is the food subtotal of delivered orders; delivery fees are excluded.
 | POST | `/payments/webhook` | Stripe (signature) | Handles `payment_intent.succeeded` and `payment_intent.payment_failed`; other events are recorded and ignored. Not rate-limited |
 | POST | `/dev/payments/:orderId/simulate` | customer, **fake mode only** | `{ outcome: "succeeded" \| "failed" }` |
 
+### Devices (mobile push)
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/devices` | signed in | `{ token: "ExponentPushToken[…]", platform: "ios" \| "android" }`. Idempotent (the app calls it on every launch); a token that belonged to another account moves to the current one. 204 |
+| DELETE | `/devices/:token` | signed in | Remove your device (on sign-out). 204 |
+
 ### Admin
 
 | Method | Path | Notes |
@@ -777,12 +818,12 @@ The end-to-end tests expect PostgreSQL on `localhost:5432` (user and password `b
 docker compose exec postgres psql -U bitebox -c "CREATE DATABASE bitebox_test;"
 ```
 
-**What's covered (42 tests):**
+**What's covered (46 tests):**
 
 | Suite | Covers |
 |---|---|
 | `order-status.spec.ts` (unit) | Every lifecycle rule: who can move what, no skipping, terminal states |
-| `app.e2e-spec.ts` | Auth and roles, no password leaks, same error for bad email or password, ownership, unknown-field rejection, menu cache invalidation, cart pricing and single-restaurant rule, checkout, unpaid orders hidden from restaurants, **forged webhook rejected**, **wrong amount ignored**, **duplicate webhook ignored**, real-time delivery only to the right sockets, full lifecycle, no skipping steps, sales report, refunds on cancel, payment after cancel refunded, restaurant reject, Stripe down at checkout, expiry job, health probes, owner joins a new restaurant's room live, login rate limiting, admin suspension |
+| `app.e2e-spec.ts` | Auth and roles, no password leaks, same error for bad email or password, ownership, unknown-field rejection, menu cache invalidation, cart pricing and single-restaurant rule, checkout, unpaid orders hidden from restaurants, **forged webhook rejected**, **wrong amount ignored**, **duplicate webhook ignored**, real-time delivery only to the right sockets, full lifecycle, no skipping steps, sales report, refunds on cancel, payment after cancel refunded, restaurant reject, Stripe down at checkout, expiry job, health probes, owner joins a new restaurant's room live, login rate limiting, admin suspension, **push notifications** (token validation, who gets notified at each step, dead tokens removed, sign-out unregisters) |
 | `fake-payments.e2e-spec.ts` | Local simulator: decline then succeed, through the real webhook handler |
 
 Only Stripe's *network* calls are faked; webhook signatures are generated and verified with Stripe's own SDK.
@@ -838,7 +879,6 @@ See **[DEPLOYMENT.md](DEPLOYMENT.md)**:
 - **Delivery partner role:** riders who pick up `ready_for_pickup` orders and own the last two steps.
 - **Refresh tokens and logout:** short-lived access tokens, rotating refresh tokens, a Redis denylist.
 - **Transactional outbox:** write events in the same transaction as the status change and publish from the table, so an event is never lost between commit and emit.
-- **Mobile app:** React Native on the same REST API and socket namespace.
 - **Infrastructure as code:** Terraform or AWS CDK for the setup in DEPLOYMENT.md.
 
 ---
