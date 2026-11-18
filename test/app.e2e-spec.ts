@@ -31,6 +31,20 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PaymentGateway } from '../src/payments/payments.module';
 import { OrderExpiryJob } from '../src/orders/order-expiry.job';
+import { PushMessage, PushService } from '../src/notifications/notifications.module';
+
+/** Captures push messages instead of calling Expo; reports one token as dead. */
+class CapturingPush extends PushService {
+  sent: PushMessage[] = [];
+  protected async post(messages: PushMessage[]) {
+    this.sent.push(...messages);
+    return messages.map((m) =>
+      m.to === 'ExponentPushToken[dead]'
+        ? { status: 'error' as const, message: 'not registered', details: { error: 'DeviceNotRegistered' } }
+        : { status: 'ok' as const },
+    );
+  }
+}
 
 class FakeGateway extends PaymentGateway {
   intents = new Map<string, number>();
@@ -116,6 +130,8 @@ describe('BiteBox API (e2e)', () => {
     await r.quit();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(PushService)
+      .useClass(CapturingPush)
       .overrideProvider(PaymentGateway)
       .useFactory({ inject: [ConfigService], factory: (c: ConfigService) => new FakeGateway(c) })
       .compile();
@@ -364,6 +380,71 @@ describe('BiteBox API (e2e)', () => {
     it('a suspended restaurant cannot take orders', async () => {
       await http.put('/cart/items').set(auth(customer)).send({ menuItemId: items.biryani, quantity: 1 }).expect(200);
       await http.post('/orders').set(auth(customer)).send({ deliveryAddress: '12 ITPL Road' }).expect(409);
+    });
+  });
+
+  describe('push notifications for mobile apps', () => {
+    let push: CapturingPush;
+    const settle = () => new Promise((r) => setTimeout(r, 300));
+    beforeAll(async () => {
+      push = app.get(PushService) as CapturingPush;
+      // The admin tests above suspended this restaurant; bring it back.
+      await http.patch(`/admin/restaurants/${restaurantId}/active`).set(auth(admin)).send({ isActive: true }).expect(200);
+      await http.delete('/cart').set(auth(customer)).expect(204);
+    });
+
+    it('rejects anything that is not an Expo push token', () =>
+      http.post('/devices').set(auth(customer)).send({ token: 'hello', platform: 'android' }).expect(400));
+
+    it('notifies the customer and the restaurant as the order moves', async () => {
+      await http.post('/devices').set(auth(customer)).send({ token: 'ExponentPushToken[cust-phone]', platform: 'android' }).expect(204);
+      await http.post('/devices').set(auth(customer)).send({ token: 'ExponentPushToken[cust-phone]', platform: 'android' }).expect(204); // idempotent
+      await http.post('/devices').set(auth(owner)).send({ token: 'ExponentPushToken[owner-tablet]', platform: 'ios' }).expect(204);
+      push.sent = [];
+
+      const { order } = await checkoutTwoBiryanis();
+      await settle();
+      expect(push.sent).toHaveLength(0); // nothing while unpaid
+
+      await pay(order.id, order.totalMinor).expect(200);
+      await settle();
+      expect(push.sent).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ to: 'ExponentPushToken[cust-phone]', title: expect.stringContaining('Order placed'), data: expect.objectContaining({ orderId: order.id, status: 'placed' }) }),
+          expect.objectContaining({ to: 'ExponentPushToken[owner-tablet]', title: expect.stringContaining('New order'), body: expect.stringContaining('2 items') }),
+        ]),
+      );
+      expect(push.sent).toHaveLength(2);
+
+      push.sent = [];
+      await http.patch(`/orders/${order.id}/status`).set(auth(owner)).send({ status: 'confirmed' }).expect(200);
+      await settle();
+      expect(push.sent).toEqual([expect.objectContaining({ to: 'ExponentPushToken[cust-phone]', title: expect.stringContaining('Order accepted') })]);
+    });
+
+    it('removes devices that Expo reports as unregistered', async () => {
+      await http.post('/devices').set(auth(customer)).send({ token: 'ExponentPushToken[dead]', platform: 'ios' }).expect(204);
+      push.sent = [];
+      const { order } = await checkoutTwoBiryanis();
+      await pay(order.id, order.totalMinor).expect(200);
+      await settle();
+      // First notification is attempted on both of the customer's devices; Expo says one is dead.
+      expect(push.sent.map((m) => m.to)).toEqual(expect.arrayContaining(['ExponentPushToken[dead]', 'ExponentPushToken[cust-phone]']));
+      push.sent = [];
+      await http.post(`/orders/${order.id}/cancel`).set(auth(customer)).send({}).expect(200);
+      await settle();
+      // ...so the next one only goes to the live device.
+      expect(push.sent.map((m) => m.to)).toContain('ExponentPushToken[cust-phone]');
+      expect(push.sent.map((m) => m.to)).not.toContain('ExponentPushToken[dead]');
+    });
+
+    it('stops notifying a device after sign-out unregisters it', async () => {
+      await http.delete('/devices/ExponentPushToken[cust-phone]').set(auth(customer)).expect(204);
+      push.sent = [];
+      const { order } = await checkoutTwoBiryanis();
+      await pay(order.id, order.totalMinor).expect(200);
+      await settle();
+      expect(push.sent.map((m) => m.to)).toEqual(['ExponentPushToken[owner-tablet]']);
     });
   });
 

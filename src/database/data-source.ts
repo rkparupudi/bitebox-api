@@ -6,6 +6,7 @@ import { User } from '../users/user.entity';
 import { MenuItem, Restaurant } from '../restaurants/restaurant.entities';
 import { Order, OrderItem, OrderStatusEvent } from '../orders/order.entities';
 import { Payment, ProcessedWebhookEvent } from '../payments/payments.module';
+import { Device } from '../notifications/notifications.module';
 
 export const entities = [
   User,
@@ -16,6 +17,7 @@ export const entities = [
   OrderStatusEvent,
   Payment,
   ProcessedWebhookEvent,
+  Device,
 ];
 
 /**

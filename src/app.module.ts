@@ -17,6 +17,7 @@ import { RolesGuard } from './common/roles';
 import { dataSourceOptions } from './database/data-source';
 import { HealthController } from './health.controller';
 import { OrdersModule } from './orders/orders.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { RealtimeModule } from './realtime/orders.gateway';
 import { RestaurantsModule } from './restaurants/restaurants.module';
@@ -54,6 +55,7 @@ import { RestaurantsModule } from './restaurants/restaurants.module';
     PaymentsModule,
     OrdersModule,
     RealtimeModule,
+    NotificationsModule,
     AdminModule,
   ],
   controllers: [HealthController],
