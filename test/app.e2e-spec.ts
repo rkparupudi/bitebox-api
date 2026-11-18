@@ -13,7 +13,7 @@ import request from 'supertest';
 import { Client } from 'pg';
 import Redis from 'ioredis';
 
-const DB = 'postgres://bitebridge:bitebridge@localhost:5432/bitebridge_test';
+const DB = 'postgres://bitebox:bitebox@localhost:5432/bitebox_test';
 const WEBHOOK_SECRET = 'whsec_test_secret';
 Object.assign(process.env, {
   DATABASE_URL: DB,
@@ -67,7 +67,7 @@ function sign(payload: string, secret = WEBHOOK_SECRET) {
   return stripe.webhooks.generateTestHeaderString({ payload, secret });
 }
 
-describe('BiteBridge API (e2e)', () => {
+describe('BiteBox API (e2e)', () => {
   let app: INestApplication;
   let http: ReturnType<typeof request>;
   let gateway: FakeGateway;

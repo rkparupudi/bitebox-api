@@ -8,7 +8,7 @@ import request from 'supertest';
 import { Client } from 'pg';
 import Redis from 'ioredis';
 
-const DB = 'postgres://bitebridge:bitebridge@localhost:5432/bitebridge_test';
+const DB = 'postgres://bitebox:bitebox@localhost:5432/bitebox_test';
 Object.assign(process.env, {
   DATABASE_URL: DB,
   REDIS_URL: 'redis://localhost:6379/2',

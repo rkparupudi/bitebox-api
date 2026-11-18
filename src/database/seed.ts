@@ -20,9 +20,9 @@ async function main() {
   const upsertUser = async (email: string, fullName: string, role: Role) =>
     (await users.findOneBy({ email })) ?? users.save(users.create({ email, fullName, role, passwordHash: hash }));
 
-  await upsertUser('admin@bitebridge.dev', 'Platform Admin', Role.ADMIN);
-  const owner = await upsertUser('owner@bitebridge.dev', 'Ravi Owner', Role.RESTAURANT_OWNER);
-  await upsertUser('customer@bitebridge.dev', 'Asha Customer', Role.CUSTOMER);
+  await upsertUser('admin@bitebox.dev', 'Platform Admin', Role.ADMIN);
+  const owner = await upsertUser('owner@bitebox.dev', 'Ravi Owner', Role.RESTAURANT_OWNER);
+  await upsertUser('customer@bitebox.dev', 'Asha Customer', Role.CUSTOMER);
 
   const restaurants = ds.getRepository(Restaurant);
   if (!(await restaurants.findOneBy({ ownerId: owner.id }))) {
@@ -46,7 +46,7 @@ async function main() {
       { restaurantId: r.id, name: 'Double Ka Meetha', category: 'Desserts', priceMinor: 12000 },
     ].map((i) => items.create(i)));
   }
-  console.log('Seeded. Logins (password123): admin@, owner@, customer@bitebridge.dev');
+  console.log('Seeded. Logins (password123): admin@, owner@, customer@bitebox.dev');
   await ds.destroy();
 }
 

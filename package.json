@@ -1,5 +1,5 @@
 {
-  "name": "bitebridge-api",
+  "name": "bitebox-api",
   "version": "0.1.0",
   "description": "Backend for a food ordering and delivery platform: NestJS, TypeScript, PostgreSQL, Redis, Stripe, WebSockets",
   "license": "MIT",

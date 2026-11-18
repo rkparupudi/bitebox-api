@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: bitebridge
-      POSTGRES_PASSWORD: bitebridge
-      POSTGRES_DB: bitebridge
+      POSTGRES_USER: bitebox
+      POSTGRES_PASSWORD: bitebox
+      POSTGRES_DB: bitebox
     ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bitebridge"]
+      test: ["CMD-SHELL", "pg_isready -U bitebox"]
       interval: 5s
       retries: 10
 
@@ -25,7 +25,7 @@ services:
       redis: { condition: service_started }
     env_file: .env
     environment:
-      DATABASE_URL: postgres://bitebridge:bitebridge@postgres:5432/bitebridge
+      DATABASE_URL: postgres://bitebox:bitebox@postgres:5432/bitebox
       REDIS_URL: redis://redis:6379
     ports: ["3000:3000"]
 

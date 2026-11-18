@@ -12,7 +12,7 @@ services:
       API_DOMAIN: ${API_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./web:/srv/web:ro # copy bitebridge-web/dist here
+      - ./web:/srv/web:ro # copy bitebox-web/dist here
       - caddy_data:/data
     depends_on: [api]
 
@@ -22,7 +22,7 @@ services:
     env_file: .env.prod
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://bitebridge:${POSTGRES_PASSWORD}@postgres:5432/bitebridge
+      DATABASE_URL: postgres://bitebox:${POSTGRES_PASSWORD}@postgres:5432/bitebox
       REDIS_URL: redis://redis:6379
       RUN_MIGRATIONS: "true" # single instance, so running migrations on start is safe here
     depends_on:
@@ -33,12 +33,12 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: bitebridge
+      POSTGRES_USER: bitebox
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: bitebridge
+      POSTGRES_DB: bitebox
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bitebridge"]
+      test: ["CMD-SHELL", "pg_isready -U bitebox"]
       interval: 5s
       retries: 10
 

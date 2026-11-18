@@ -1,10 +1,10 @@
-# BiteBridge API
+# BiteBox API
 
-Backend for **BiteBridge**, a food ordering and delivery platform. Customers browse restaurants, build a cart, pay online and track their order live. Restaurants manage menus, work through incoming orders on a live board and see their sales. Admins oversee the whole platform.
+Backend for **BiteBox**, a food ordering and delivery platform. Customers browse restaurants, build a cart, pay online and track their order live. Restaurants manage menus, work through incoming orders on a live board and see their sales. Admins oversee the whole platform.
 
-The front end is in the companion repo [bitebridge-web](https://github.com/rkparupudi/bitebridge-web).
+The front end is in the companion repo [bitebox-web](https://github.com/rkparupudi/bitebox-web).
 
-![CI](https://github.com/rkparupudi/bitebridge-api/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/rkparupudi/bitebox-api/actions/workflows/ci.yml/badge.svg)
 
 | | |
 |---|---|
@@ -160,9 +160,9 @@ npm run seed
 
 | Account | Email | Password |
 |---|---|---|
-| Customer | `customer@bitebridge.dev` | `password123` |
-| Restaurant owner | `owner@bitebridge.dev` | `password123` |
-| Admin | `admin@bitebridge.dev` | `password123` |
+| Customer | `customer@bitebox.dev` | `password123` |
+| Restaurant owner | `owner@bitebox.dev` | `password123` |
+| Admin | `admin@bitebox.dev` | `password123` |
 
 It also creates one open restaurant, *Whitefield Biryani House*, with five dishes.
 
@@ -178,7 +178,7 @@ npm run start:dev               # restarts on file changes
 
 ### 5. Run the web app
 
-In the `bitebridge-web` folder, run `npm install` and then `npm run dev`. Open http://localhost:5173 and use the one-click demo logins.
+In the `bitebox-web` folder, run `npm install` and then `npm run dev`. Open http://localhost:5173 and use the one-click demo logins.
 
 ### Try it without the UI
 
@@ -187,7 +187,7 @@ Uses `curl` and [`jq`](https://jqlang.github.io/jq/) (Git Bash or WSL on Windows
 ```bash
 # sign in
 TOKEN=$(curl -s -X POST localhost:3000/auth/login -H 'content-type: application/json' \
-  -d '{"email":"customer@bitebridge.dev","password":"password123"}' | jq -r .accessToken)
+  -d '{"email":"customer@bitebox.dev","password":"password123"}' | jq -r .accessToken)
 
 # browse
 RID=$(curl -s localhost:3000/restaurants | jq -r '.[0].id')
@@ -538,7 +538,7 @@ Example response from `POST /auth/login`:
   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…",
   "user": {
     "id": "f7bd1300-2e01-4a77-ba3d-cc4652ba6d5d",
-    "email": "customer@bitebridge.dev",
+    "email": "customer@bitebox.dev",
     "fullName": "Asha Customer",
     "role": "customer"
   }
@@ -769,12 +769,12 @@ docker compose up -d postgres redis     # the tests use real databases
 npm test
 ```
 
-The end-to-end tests expect PostgreSQL on `localhost:5432` (user and password `bitebridge`, database **`bitebridge_test`**) and Redis on `localhost:6379`. They wipe and recreate that test database on every run, so your development data in `bitebridge` is never touched.
+The end-to-end tests expect PostgreSQL on `localhost:5432` (user and password `bitebox`, database **`bitebox_test`**) and Redis on `localhost:6379`. They wipe and recreate that test database on every run, so your development data in `bitebox` is never touched.
 
-`docker compose` creates `bitebridge_test` automatically the first time the Postgres volume is initialised. If your volume existed before that, create it once:
+`docker compose` creates `bitebox_test` automatically the first time the Postgres volume is initialised. If your volume existed before that, create it once:
 
 ```bash
-docker compose exec postgres psql -U bitebridge -c "CREATE DATABASE bitebridge_test;"
+docker compose exec postgres psql -U bitebox -c "CREATE DATABASE bitebox_test;"
 ```
 
 **What's covered (42 tests):**
@@ -815,7 +815,7 @@ npm run migration:run
 | `ECONNREFUSED 127.0.0.1:5432` / `:6379` | Start the containers: `docker compose up -d postgres redis` |
 | `relation "users" does not exist` | Run `npm run seed` (applies migrations) or start the app once |
 | Port 5432 already in use | Another PostgreSQL is running locally. Stop it, or change the port mapping in `docker-compose.yml` and `DATABASE_URL` |
-| Tests fail with `database "bitebridge_test" does not exist` | Create it (see [Testing](#testing)) |
+| Tests fail with `database "bitebox_test" does not exist` | Create it (see [Testing](#testing)) |
 | Web app shows "Connecting…" instead of "Live" | The API isn't running on :3000, or the token expired. Sign out and back in |
 | Webhook returns 400 "Invalid Stripe signature" | `STRIPE_WEBHOOK_SECRET` must be the `whsec_…` printed by `stripe listen` (or from the dashboard endpoint), and nothing may modify the body in between |
 | 429 Too Many Requests while developing | Raise `RATE_LIMIT_PER_MINUTE` / `AUTH_RATE_LIMIT_PER_MINUTE` in `.env` |

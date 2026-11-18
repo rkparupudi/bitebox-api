@@ -84,7 +84,7 @@ export async function configureApp(app: INestApplication) {
   const doc = SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
-      .setTitle('BiteBridge API')
+      .setTitle('BiteBox API')
       .setDescription('Food ordering and delivery backend')
       .setVersion('0.1.0')
       .addBearerAuth()

@@ -1,12 +1,12 @@
 {
-  "family": "bitebridge-api",
+  "family": "bitebox-api",
   "requiresCompatibilities": ["FARGATE"],
   "networkMode": "awsvpc",
   "cpu": "256",
   "memory": "512",
   "runtimePlatform": { "cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX" },
-  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/bitebridge-ecs-execution",
-  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/bitebridge-ecs-task",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/bitebox-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/bitebox-ecs-task",
   "containerDefinitions": [
     {
       "name": "api",
@@ -27,12 +27,12 @@
         { "name": "AUTH_RATE_LIMIT_PER_MINUTE", "value": "10" }
       ],
       "secrets": [
-        { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/DATABASE_URL" },
-        { "name": "REDIS_URL", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/REDIS_URL" },
-        { "name": "JWT_SECRET", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/JWT_SECRET" },
-        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/STRIPE_SECRET_KEY" },
-        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/STRIPE_WEBHOOK_SECRET" },
-        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/STRIPE_PUBLISHABLE_KEY" }
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebox/prod/DATABASE_URL" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebox/prod/REDIS_URL" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebox/prod/JWT_SECRET" },
+        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebox/prod/STRIPE_SECRET_KEY" },
+        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebox/prod/STRIPE_WEBHOOK_SECRET" },
+        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebox/prod/STRIPE_PUBLISHABLE_KEY" }
       ],
       "healthCheck": {
         "command": ["CMD-SHELL", "wget -qO- http://localhost:3000/health/live || exit 1"],
@@ -44,7 +44,7 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/bitebridge-api",
+          "awslogs-group": "/ecs/bitebox-api",
           "awslogs-region": "ap-south-1",
           "awslogs-stream-prefix": "api",
           "awslogs-create-group": "true"

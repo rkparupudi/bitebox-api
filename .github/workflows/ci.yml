@@ -7,12 +7,12 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: bitebridge
-          POSTGRES_PASSWORD: bitebridge
-          POSTGRES_DB: bitebridge_test
+          POSTGRES_USER: bitebox
+          POSTGRES_PASSWORD: bitebox
+          POSTGRES_DB: bitebox_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U bitebridge" --health-interval 5s --health-retries 10
+          --health-cmd "pg_isready -U bitebox" --health-interval 5s --health-retries 10
       redis:
         image: redis:7-alpine
         ports: ["6379:6379"]

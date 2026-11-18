@@ -22,9 +22,9 @@ permissions:
 
 env:
   AWS_REGION: ap-south-1
-  ECR_REPOSITORY: bitebridge-api
-  ECS_CLUSTER: bitebridge
-  ECS_SERVICE: bitebridge-api
+  ECR_REPOSITORY: bitebox-api
+  ECS_CLUSTER: bitebox
+  ECS_SERVICE: bitebox-api
 
 jobs:
   deploy:
