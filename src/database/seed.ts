@@ -13,6 +13,7 @@ import { dataSourceOptions } from './data-source';
 
 async function main() {
   const ds = await new DataSource(dataSourceOptions()).initialize();
+  await ds.runMigrations(); // so a fresh database works: create tables, then seed
   const users = ds.getRepository(User);
   const hash = await bcrypt.hash('password123', 12);
 

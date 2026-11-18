@@ -13,6 +13,7 @@ export function validateConfig(env: Record<string, unknown>) {
     if (provider === 'fake') errors.push('PAYMENTS_PROVIDER=fake is not allowed in production');
     if (String(env.JWT_SECRET ?? '').length < 32) errors.push('JWT_SECRET must be at least 32 characters in production');
     if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) errors.push('Stripe keys are required in production');
+    if (!env.CORS_ORIGINS) errors.push('CORS_ORIGINS is required in production (the web app URL)');
   }
   if (errors.length) throw new Error(`Invalid configuration:\n - ${errors.join('\n - ')}`);
   return env;

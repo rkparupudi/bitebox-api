@@ -57,6 +57,12 @@ Cancellation: the customer can cancel until the restaurant confirms; the restaur
 | Socket rooms assigned by the server | `OrdersGateway.handleConnection` | Clients can't subscribe to someone else's orders |
 | Socket.IO Redis adapter | `app.setup.ts` | Real-time keeps working when you run more than one API instance |
 | Migrations, not `synchronize` | `src/database/migrations` | Schema changes are reviewed SQL in git |
+| Migrations run once per deploy | `src/database/migrate.ts`, deploy workflow | Several containers starting together never race to migrate |
+| Rate limits stored in Redis | `common/redis-throttler.storage.ts` | Limits hold across all instances, not per instance |
+| Scheduled job with a Redis lock | `orders/order-expiry.job.ts` | Every instance runs the cron; only one does the work |
+| Liveness vs readiness probes | `health.controller.ts` | A DB blip stops traffic to a task without killing it |
+| Fail-fast config validation | `config.validation.ts` | Refuses to start in production with fake payments, a weak JWT secret or a missing CORS allow-list |
+| Verified TLS to the database | `DATABASE_SSL_CA` | Encrypted *and* authenticated connection to RDS |
 
 ## API
 
@@ -78,29 +84,44 @@ Full interactive docs at `http://localhost:3000/docs` (Swagger).
 | GET | `/restaurants/:id/orders?status=`, `/restaurants/:id/sales?from=&to=` | owner, admin |
 | POST | `/payments/webhook` | Stripe (signature-verified) |
 | GET/PATCH | `/admin/orders`, `/admin/restaurants`, `/admin/restaurants/:id/active` | admin |
-| GET | `/health` | public |
+| GET | `/health/live`, `/health/ready` | public |
+| GET | `/config` | public (what the web app needs: payment mode, Stripe publishable key) |
+| POST | `/dev/payments/:orderId/simulate` | customer, only when `PAYMENTS_PROVIDER=fake` |
 
 **WebSocket:** `io('http://localhost:3000/orders', { auth: { token } })`, then listen for `order.updated`.
 
-## Run it locally (Windows works fine with Docker Desktop)
+## Run it locally (Windows, macOS or Linux)
+
+You need **Node.js 22** and **Docker Desktop**.
 
 ```bash
-cp .env.example .env              # add your Stripe test keys
+# 1. Database and Redis
 docker compose up -d postgres redis
+
+# 2. API (first terminal)
+cp .env.example .env          # Windows PowerShell: copy .env.example .env
 npm install
-npm run migration:run
-npm run seed                      # admin@ / owner@ / customer@bitebridge.dev, password123
-npm run start:dev
+npm run seed                  # creates tables and demo data
+npm run start:dev             # http://localhost:3000, docs at /docs
+
+# 3. Web app (second terminal), from the bitebridge-web folder
+npm install
+npm run dev                   # http://localhost:5173
 ```
 
-Or everything in containers: `docker compose up --build`.
+Open http://localhost:5173 and use the one-click demo sign-ins (customer, owner, admin; password `password123`). Put the customer in one browser window and the owner in another (or an incognito window), place an order, and watch it show up on the restaurant's board instantly.
 
-### Testing payments with Stripe test mode
+`.env.example` sets `PAYMENTS_PROVIDER=fake`, so **no Stripe account is needed**: the checkout shows Pay and Simulate-declined buttons. These send a Stripe-shaped event through the same webhook handler production uses. To use real Stripe test mode, set `PAYMENTS_PROVIDER=stripe` and your test keys, then run:
 
 ```bash
 stripe listen --forward-to localhost:3000/payments/webhook   # prints the whsec_... for .env
-stripe trigger payment_intent.succeeded                       # or pay with card 4242 4242 4242 4242
 ```
+
+and pay with card `4242 4242 4242 4242`.
+
+## Deploying
+
+See **[DEPLOYMENT.md](DEPLOYMENT.md)**: a ~$12/month single-server option and a ~$80–90/month production setup on ECS Fargate, RDS and ElastiCache, with GitHub Actions pipelines for both repos.
 
 ## Tests
 
@@ -108,20 +129,18 @@ stripe trigger payment_intent.succeeded                       # or pay with card
 npm test
 ```
 
-Unit tests cover the state machine. End-to-end tests (36 in total) run the whole app against real PostgreSQL and Redis: auth and role checks, cache invalidation, cart rules, checkout, forged and replayed webhooks, wrong-amount payments, real-time delivery to the right sockets only, the full lifecycle, refunds, a payment that lands after cancellation, Stripe being down at checkout, and admin suspension. Only Stripe's network calls are faked; webhook signatures are real.
+Unit tests cover the state machine. End-to-end tests (42 in total, across two suites) run the whole app against real PostgreSQL and Redis: auth and role checks, cache invalidation, cart rules, checkout, forged and replayed webhooks, wrong-amount payments, real-time delivery to the right sockets only, the full lifecycle, refunds, a payment that lands after cancellation, Stripe being down at checkout, admin suspension, the unpaid-order expiry job, rate limiting, health probes, live room joins, and the local fake-payment mode. Only Stripe's network calls are faked; webhook signatures are real.
 
 The e2e tests expect Postgres at `localhost:5432` (user/password `bitebridge`, database `bitebridge_test`) and Redis at `localhost:6379`.
 
 ## Exercises (next things to build)
 
 - **Delivery fee from distance:** call the Google Maps Distance Matrix API at checkout instead of the flat `DELIVERY_FEE_MINOR`. Restaurants already store latitude and longitude.
-- **Expire unpaid orders:** a scheduled job (`@nestjs/schedule`) that cancels `pending_payment` orders older than 30 minutes.
 - **Delivery partner role:** a `rider` role that takes `ready_for_pickup` orders and owns `out_for_delivery → delivered`.
 - **Refresh tokens and logout** with a token denylist in Redis.
-- **Rate limiting** on login and checkout (`@nestjs/throttler` with Redis storage).
-- **Join new restaurant rooms live:** an owner who creates a restaurant while connected only hears its orders after reconnecting.
 - **Outbox pattern:** write status events to a table in the same transaction and publish from there, so an event is never lost if the process dies between commit and emit.
 - **React Native client** using the same REST API and Socket.IO namespace.
+- **Infrastructure as code:** turn the console steps in DEPLOYMENT.md into Terraform or AWS CDK.
 
 ## License
 

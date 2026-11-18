@@ -1,0 +1,56 @@
+{
+  "family": "bitebridge-api",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "runtimePlatform": { "cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX" },
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/bitebridge-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/bitebridge-ecs-task",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "<FILLED_IN_BY_PIPELINE>",
+      "essential": true,
+      "portMappings": [{ "containerPort": 3000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "3000" },
+        { "name": "RUN_MIGRATIONS", "value": "false" },
+        { "name": "DATABASE_SSL_CA", "value": "/app/rds-ca.pem" },
+        { "name": "CORS_ORIGINS", "value": "https://app.<YOUR_DOMAIN>" },
+        { "name": "PAYMENTS_PROVIDER", "value": "stripe" },
+        { "name": "CURRENCY", "value": "inr" },
+        { "name": "DELIVERY_FEE_MINOR", "value": "4000" },
+        { "name": "DB_POOL_MAX", "value": "10" },
+        { "name": "RATE_LIMIT_PER_MINUTE", "value": "300" },
+        { "name": "AUTH_RATE_LIMIT_PER_MINUTE", "value": "10" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/DATABASE_URL" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/REDIS_URL" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/JWT_SECRET" },
+        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/STRIPE_SECRET_KEY" },
+        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/STRIPE_WEBHOOK_SECRET" },
+        { "name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/bitebridge/prod/STRIPE_PUBLISHABLE_KEY" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -qO- http://localhost:3000/health/live || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/bitebridge-api",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "api",
+          "awslogs-create-group": "true"
+        }
+      },
+      "stopTimeout": 30
+    }
+  ]
+}

@@ -28,7 +28,9 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
   async increment(key: string, ttl: number, limit: number, blockDuration: number, throttlerName: string) {
-    const hitKey = `throttle:${throttlerName}:${key}`;
+    // The {braces} are a Redis Cluster hash tag: both keys land in the same slot, so this
+    // two-key script also works on clustered Redis/Valkey (e.g. ElastiCache Serverless).
+    const hitKey = `throttle:{${throttlerName}:${key}}`;
     const blockKey = `${hitKey}:blocked`;
     const [hits, ttlMs, blockTtlMs] = (await this.redis.eval(
       SCRIPT,

@@ -71,7 +71,10 @@ export async function configureApp(app: INestApplication) {
       transform: true,
     }),
   );
-  app.enableCors();
+  // In production, only the web app's own origin may call the API from a browser.
+  // CORS_ORIGINS is a comma-separated list, e.g. https://app.yourdomain.com
+  const origins = app.get(ConfigService).get<string>('CORS_ORIGINS');
+  app.enableCors({ origin: origins ? origins.split(',').map((o) => o.trim()) : true });
   app.enableShutdownHooks();
 
   const adapter = new RedisIoAdapter(app);
