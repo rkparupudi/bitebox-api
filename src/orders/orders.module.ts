@@ -19,12 +19,17 @@ import {
   Req,
 } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { SkipThrottle } from '@nestjs/throttler';
 import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { Request } from 'express';
 import { Public } from '../auth/auth.module';
 import { CartModule } from '../cart/cart.module';
 import { AuthUser, CurrentUser, Role, Roles } from '../common/roles';
-import { PaymentGateway, PaymentsModule } from '../payments/payments.module';
+import { ConfigService } from '@nestjs/config';
+import { IsIn } from 'class-validator';
+import { NotFoundException } from '@nestjs/common';
+import { PaymentGateway, PaymentsModule, isFakePayments } from '../payments/payments.module';
+import { OrderExpiryJob } from './order-expiry.job';
 import { RestaurantsModule } from '../restaurants/restaurants.module';
 import { OrderStatus } from './order-status';
 import { Order, OrderItem, OrderStatusEvent } from './order.entities';
@@ -133,6 +138,7 @@ export class PaymentWebhookController {
   ) {}
 
   @Public()
+  @SkipThrottle() // Stripe sends bursts from a few IPs; it's authenticated by signature instead
   @Post('webhook')
   @HttpCode(200)
   async webhook(@Req() req: RawBodyRequest<Request>, @Headers('stripe-signature') signature?: string) {
@@ -149,6 +155,48 @@ export class PaymentWebhookController {
   }
 }
 
+export class SimulatePaymentDto {
+  @IsIn(['succeeded', 'failed']) outcome: 'succeeded' | 'failed';
+}
+
+/** Exists only when PAYMENTS_PROVIDER=fake; returns 404 otherwise. */
+@Controller('dev/payments')
+export class DevPaymentsController {
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly config: ConfigService,
+  ) {}
+
+  @Roles(Role.CUSTOMER)
+  @Post(':orderId/simulate')
+  @HttpCode(200)
+  simulate(
+    @CurrentUser() user: AuthUser,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: SimulatePaymentDto,
+  ) {
+    if (!isFakePayments(this.config)) throw new NotFoundException();
+    return this.orders.simulatePayment(user, orderId, dto.outcome);
+  }
+}
+
+/** What the web app needs to know before it renders checkout. Safe to expose. */
+@Controller('config')
+export class PublicConfigController {
+  constructor(private readonly config: ConfigService) {}
+
+  @Public()
+  @Get()
+  get() {
+    return {
+      paymentsProvider: isFakePayments(this.config) ? 'fake' : 'stripe',
+      stripePublishableKey: this.config.get<string>('STRIPE_PUBLISHABLE_KEY', ''),
+      currency: this.config.get<string>('CURRENCY', 'inr').toLowerCase(),
+      deliveryFeeMinor: Number(this.config.get('DELIVERY_FEE_MINOR', 4000)),
+    };
+  }
+}
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Order, OrderItem, OrderStatusEvent]),
@@ -156,8 +204,8 @@ export class PaymentWebhookController {
     CartModule,
     PaymentsModule,
   ],
-  controllers: [OrdersController, PaymentWebhookController],
-  providers: [OrdersService],
+  controllers: [OrdersController, PaymentWebhookController, DevPaymentsController, PublicConfigController],
+  providers: [OrdersService, OrderExpiryJob],
   exports: [OrdersService],
 })
 export class OrdersModule {}

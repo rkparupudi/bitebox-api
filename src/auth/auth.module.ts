@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { AuthGuard, PassportModule, PassportStrategy } from '@nestjs/passport';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { InjectRepository, TypeOrmModule } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
@@ -131,6 +132,10 @@ export class AuthService {
   }
 }
 
+/** Tighter limit on credential endpoints to slow down password guessing. */
+const AUTH_LIMIT = { default: { ttl: 60_000, limit: () => Number(process.env.AUTH_RATE_LIMIT_PER_MINUTE ?? 10) } };
+
+@Throttle(AUTH_LIMIT)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
@@ -148,6 +153,7 @@ export class AuthController {
     return this.auth.login(dto);
   }
 
+  @SkipThrottle() // already authenticated; the web app calls this on every page load
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return user;

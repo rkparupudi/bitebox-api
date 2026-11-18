@@ -22,11 +22,15 @@ Object.assign(process.env, {
   STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
   CURRENCY: 'inr',
   DELIVERY_FEE_MINOR: '4000',
+  PAYMENTS_PROVIDER: 'stripe',
+  RATE_LIMIT_PER_MINUTE: '10000',
+  AUTH_RATE_LIMIT_PER_MINUTE: '30',
 });
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PaymentGateway } from '../src/payments/payments.module';
+import { OrderExpiryJob } from '../src/orders/order-expiry.job';
 
 class FakeGateway extends PaymentGateway {
   intents = new Map<string, number>();
@@ -325,6 +329,17 @@ describe('BiteBridge API (e2e)', () => {
       expect(res.body.payment.status).toBe('refunded');
     });
 
+    it('abandoned unpaid orders are expired by the scheduled job', async () => {
+      const { order } = await checkoutTwoBiryanis();
+      const job = app.get(OrderExpiryJob);
+      expect(await job.expireUnpaid(new Date(Date.now() - 60_000))).toBe(0); // too recent
+      expect(await job.expireUnpaid(new Date(Date.now() + 1_000))).toBe(1);
+      const after = (await http.get(`/orders/${order.id}`).set(auth(customer))).body;
+      expect(after.status).toBe('cancelled');
+      expect(after.cancelReason).toBe('payment_timeout');
+      expect(gateway.cancelled).toContain(`pi_test_${order.id.slice(0, 8)}`);
+    });
+
     it('if Stripe is down at checkout, the order is cancelled and the cart is kept', async () => {
       await http.put('/cart/items').set(auth(customer)).send({ menuItemId: items.biryani, quantity: 1 }).expect(200);
       gateway.failNextCreate = true;
@@ -350,6 +365,35 @@ describe('BiteBridge API (e2e)', () => {
       await http.put('/cart/items').set(auth(customer)).send({ menuItemId: items.biryani, quantity: 1 }).expect(200);
       await http.post('/orders').set(auth(customer)).send({ deliveryAddress: '12 ITPL Road' }).expect(409);
     });
+  });
+
+  it('health probes', async () => {
+    await http.get('/health/live').expect(200);
+    await http.get('/health/ready').expect(200);
+  });
+
+  it('the dev payment simulator is off unless PAYMENTS_PROVIDER=fake', () =>
+    http.post(`/dev/payments/${restaurantId}/simulate`).set(auth(customer)).send({ outcome: 'succeeded' }).expect(404));
+
+  it('an owner already connected hears orders for a restaurant created after connecting', async () => {
+    const rest = await connect(otherOwner);
+    const newId = (await http.post('/restaurants').set(auth(otherOwner)).send({ name: 'Late Night Rolls', address: 'Whitefield' }).expect(201)).body.id;
+    const item = (await http.post(`/restaurants/${newId}/menu-items`).set(auth(otherOwner)).send({ name: 'Egg Roll', priceMinor: 8000 }).expect(201)).body.id;
+    await http.patch(`/restaurants/${newId}`).set(auth(otherOwner)).send({ isOpen: true }).expect(200);
+    await http.put('/cart/items?replace=true').set(auth(customer)).send({ menuItemId: item, quantity: 1 }).expect(200);
+    const { order } = (await http.post('/orders').set(auth(customer)).send({ deliveryAddress: '12 ITPL Road' }).expect(201)).body;
+    await pay(order.id, order.totalMinor).expect(200);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(rest.events).toEqual([expect.objectContaining({ orderId: order.id, status: 'placed' })]);
+  });
+
+  it('rate-limits login attempts', async () => {
+    let limited = false;
+    for (let i = 0; i < 35 && !limited; i++) {
+      const res = await http.post('/auth/login').send({ email: 'cust@example.com', password: 'wrong-pass' });
+      limited = res.status === 429;
+    }
+    expect(limited).toBe(true);
   });
 
   it('rejects socket connections without a valid token', async () => {

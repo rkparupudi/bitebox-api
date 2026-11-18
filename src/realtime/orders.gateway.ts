@@ -13,6 +13,7 @@ import { AuthUser, Role } from '../common/roles';
 import { OrderStatus } from '../orders/order-status';
 import { ORDER_STATUS_CHANGED, OrderStatusChanged } from '../orders/orders.service';
 import { Restaurant } from '../restaurants/restaurant.entities';
+import { RESTAURANT_CREATED } from '../restaurants/restaurants.module';
 
 export const rooms = {
   user: (id: string) => `user:${id}`,
@@ -68,6 +69,15 @@ export class OrdersGateway implements OnGatewayConnection {
       socket.emit('error', { message: 'Unauthorized' });
       socket.disconnect(true);
     }
+  }
+
+  /**
+   * A new restaurant: put all of its owner's open sockets into the restaurant's room.
+   * socketsJoin goes through the Redis adapter, so it reaches sockets on every instance.
+   */
+  @OnEvent(RESTAURANT_CREATED)
+  onRestaurantCreated(e: { ownerId: string; restaurantId: string }) {
+    this.server.in(rooms.user(e.ownerId)).socketsJoin(rooms.restaurant(e.restaurantId));
   }
 
   @OnEvent(ORDER_STATUS_CHANGED)

@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import Stripe from 'stripe';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { CartService } from '../cart/cart.module';
@@ -159,6 +160,33 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Local development only (PAYMENTS_PROVIDER=fake): pretend Stripe sent a webhook.
+   * Builds a Stripe-shaped event and runs it through the real webhook handler, so the
+   * code path is identical to production apart from the signature check.
+   */
+  async simulatePayment(user: AuthUser, orderId: string, outcome: 'succeeded' | 'failed') {
+    const order = await this.findForUser(user, orderId);
+    if (order.customerId !== user.id) throw new ForbiddenException();
+    const payment = await this.payments.findOneByOrFail({ orderId });
+    const event = {
+      id: `evt_fake_${randomUUID()}`,
+      object: 'event',
+      type: outcome === 'succeeded' ? 'payment_intent.succeeded' : 'payment_intent.payment_failed',
+      data: {
+        object: {
+          id: payment.providerPaymentId,
+          object: 'payment_intent',
+          amount_received: outcome === 'succeeded' ? payment.amountMinor : 0,
+          currency: payment.currency,
+          last_payment_error: outcome === 'failed' ? { message: 'Your card was declined (simulated).' } : null,
+        },
+      },
+    } as unknown as Stripe.Event;
+    await this.handleStripeEvent(event);
+    return this.findForUser(user, orderId);
+  }
+
   // ------------------------------------------------------------------ status changes
 
   /** Restaurant (or admin) moves an order forward: confirm, preparing, ready, out, delivered. */
@@ -222,6 +250,12 @@ export class OrdersService {
     const change = await this.dataSource.transaction(run);
     this.events.emit(ORDER_STATUS_CHANGED, change);
     return change;
+  }
+
+  /** Used by the expiry job: cancel an abandoned unpaid order and void its PaymentIntent. */
+  async expireUnpaidOrder(orderId: string) {
+    await this.transition(orderId, OrderStatus.CANCELLED, 'system', null, 'payment_timeout');
+    await this.settlePaymentAfterCancel(orderId);
   }
 
   private async settlePaymentAfterCancel(orderId: string) {

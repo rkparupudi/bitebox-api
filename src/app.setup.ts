@@ -1,4 +1,9 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import compression from 'compression';
+import { randomUUID } from 'crypto';
+import { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
 import { ConfigService } from '@nestjs/config';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -35,6 +40,30 @@ class RedisIoAdapter extends IoAdapter {
 
 /** Shared by main.ts and the e2e tests, so tests run the app exactly as production does. */
 export async function configureApp(app: INestApplication) {
+  // Behind an AWS load balancer the client IP arrives in X-Forwarded-For.
+  // Trusting one proxy hop makes req.ip (and so rate limiting) see the real client.
+  (app as NestExpressApplication).set('trust proxy', 1);
+
+  // Security headers. CSP is off because this service only serves JSON (and the Swagger page).
+  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(compression());
+
+  // One structured log line per request with a request id, so a request can be traced
+  // across instances in CloudWatch. Honour an incoming id from the load balancer if present.
+  const http = new Logger('HTTP');
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const id = (req.headers['x-request-id'] as string) || randomUUID();
+    res.setHeader('x-request-id', id);
+    const start = Date.now();
+    res.on('finish', () => {
+      if (req.path.startsWith('/health')) return;
+      http.log(
+        JSON.stringify({ id, method: req.method, path: req.originalUrl, status: res.statusCode, ms: Date.now() - start }),
+      );
+    });
+    next();
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // strip fields that aren't in the DTO

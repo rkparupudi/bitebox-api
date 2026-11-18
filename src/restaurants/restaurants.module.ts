@@ -30,6 +30,7 @@ import {
   MinLength,
 } from 'class-validator';
 import Redis from 'ioredis';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ILike, Repository } from 'typeorm';
 import { Public } from '../auth/auth.module';
 import { REDIS } from '../common/redis.module';
@@ -64,6 +65,9 @@ export class UpdateMenuItemDto extends PartialType(CreateMenuItemDto) {}
 
 const MENU_TTL_SECONDS = 300;
 const menuKey = (restaurantId: string) => `menu:${restaurantId}`;
+const LIST_KEY = 'restaurants:public';
+export const RESTAURANT_CREATED = 'restaurant.created';
+const LIST_TTL_SECONDS = 30;
 
 @Injectable()
 export class RestaurantsService {
@@ -71,22 +75,34 @@ export class RestaurantsService {
     @InjectRepository(Restaurant) private readonly restaurants: Repository<Restaurant>,
     @InjectRepository(MenuItem) private readonly items: Repository<MenuItem>,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly events: EventEmitter2,
   ) {}
 
-  listPublic(q?: string) {
-    return this.restaurants.find({
+  /** The home page list is the hottest read in the app, so the unfiltered list is cached briefly. */
+  async listPublic(q?: string) {
+    if (!q) {
+      const cached = await this.redis.get(LIST_KEY);
+      if (cached) return JSON.parse(cached);
+    }
+    const list = await this.restaurants.find({
       where: { isActive: true, ...(q ? { name: ILike(`%${q}%`) } : {}) },
       order: { isOpen: 'DESC', name: 'ASC' },
       take: 100,
     });
+    if (!q) await this.redis.set(LIST_KEY, JSON.stringify(list), 'EX', LIST_TTL_SECONDS);
+    return list;
   }
 
   listMine(user: AuthUser) {
     return this.restaurants.find({ where: { ownerId: user.id }, order: { createdAt: 'ASC' } });
   }
 
-  create(user: AuthUser, dto: CreateRestaurantDto) {
-    return this.restaurants.save(this.restaurants.create({ ...dto, ownerId: user.id }));
+  async create(user: AuthUser, dto: CreateRestaurantDto) {
+    const saved = await this.restaurants.save(this.restaurants.create({ ...dto, ownerId: user.id }));
+    await this.redis.del(LIST_KEY);
+    // Lets an owner who is already connected over WebSocket start hearing this restaurant's orders.
+    this.events.emit(RESTAURANT_CREATED, { ownerId: user.id, restaurantId: saved.id });
+    return saved;
   }
 
   async update(user: AuthUser, id: string, dto: UpdateRestaurantDto) {
@@ -166,7 +182,7 @@ export class RestaurantsService {
   }
 
   private invalidateMenu(restaurantId: string) {
-    return this.redis.del(menuKey(restaurantId));
+    return this.redis.del(menuKey(restaurantId), LIST_KEY);
   }
 }
 

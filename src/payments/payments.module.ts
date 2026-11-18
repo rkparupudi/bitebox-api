@@ -134,9 +134,40 @@ export class PaymentGateway {
   }
 }
 
+/**
+ * Local-development stand-in for Stripe, selected with PAYMENTS_PROVIDER=fake.
+ * Lets you run the whole app with no Stripe account: the web app shows a
+ * "simulate payment" button that calls POST /dev/payments/:orderId/simulate,
+ * which feeds a Stripe-shaped event through exactly the same webhook handler.
+ */
+@Injectable()
+export class FakePaymentGateway extends PaymentGateway {
+  async createPaymentIntent(args: { orderId: string }) {
+    const id = `pi_fake_${args.orderId.replace(/-/g, '')}`;
+    return { id, clientSecret: `${id}_secret_fake` };
+  }
+  async getClientSecret(paymentIntentId: string) {
+    return `${paymentIntentId}_secret_fake`;
+  }
+  async cancelPaymentIntent() {}
+  async refund(paymentIntentId: string) {
+    return { id: `re_fake_${paymentIntentId.slice(8, 24)}` };
+  }
+}
+
+export const isFakePayments = (config: ConfigService) =>
+  config.get<string>('PAYMENTS_PROVIDER', 'stripe') === 'fake';
+
 @Module({
   imports: [TypeOrmModule.forFeature([Payment, ProcessedWebhookEvent])],
-  providers: [PaymentGateway],
+  providers: [
+    {
+      provide: PaymentGateway,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        isFakePayments(config) ? new FakePaymentGateway(config) : new PaymentGateway(config),
+    },
+  ],
   exports: [PaymentGateway, TypeOrmModule],
 })
 export class PaymentsModule {}
